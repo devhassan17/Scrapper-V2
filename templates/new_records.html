@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Newly Fetched Companies</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f8f9fa; }
+        .container { max-width: 800px; margin: auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+        h2 { color: #333; }
+        ul { list-style-type: none; padding: 0; }
+        li { margin: 5px 0; }
+        a { text-decoration: none; color: blue; }
+        .back-btn { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Newly Fetched Companies (Total: {{ count }})</h2>
+        {% if new_records %}
+            <ul>
+                {% for company in new_records %}
+                    <li><a href="{{ company }}" target="_blank">{{ company }}</a></li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No new companies found.</p>
+        {% endif %}
+        <a class="back-btn" href="{{ url_for('index') }}">Back to Home</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ source.capitalize() }} Companies</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <style>
+        #topButton, #bottomButton {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: none;
+        }
+        .top-left-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+        }
+        .top-right-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Download PDF Button -->
+    <a href="{{ url_for('download') }}" class="btn btn-success top-right-button">Download PDF</a>
+    
+    <div class="container mt-5">
+        <h1 class="text-center">{{ source.capitalize() }} Companies</h1>
+        
+        <!-- Fetch New Button -->
+        <div class="text-center mb-3">
+            <button id="fetchNewButton" class="btn btn-warning">Fetch New</button>
+        </div>
+        
+        <!-- Copy All Records Button -->
+        <div class="text-center mb-3">
+            <button id="copyButton" class="btn btn-info">Copy All Records</button>
+        </div>
+        
+        <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Company URL</th>
+                    <th>Status</th>
+                    <th>Copy</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for company in companies %}
+                    <tr>
+                        <td>{{ company[0] }}</td>
+                        <td><a href="{{ company[1] }}" target="_blank">{{ company[1] }}</a></td>
+                        <td>{{ "Used" if company[2] else "Not Used" }}</td>
+                        <td><button class="btn btn-sm btn-primary copy-url" data-id="{{ company[0] }}" data-source="{{ source }}" data-url="{{ company[1] }}">Copy</button></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Back to Home Button -->
+    <a href="{{ url_for('index') }}" class="btn btn-secondary top-left-button">Back to Home</a>
+    
+    <!-- Scroll to Top Button -->
+    <button id="topButton" class="btn btn-primary">Top</button>
+    
+    <!-- Scroll to Bottom Button -->
+    <button id="bottomButton" class="btn btn-warning">Bottom</button>
+    
+    <script>
+        $(window).scroll(function () {
+            if ($(this).scrollTop() > 100) {
+                $('#topButton').fadeIn();
+            } else {
+                $('#topButton').fadeOut();
+            }
+            if ($(this).scrollTop() + $(this).innerHeight() < $(document).height() - 100) {
+                $('#bottomButton').fadeIn();
+            } else {
+                $('#bottomButton').fadeOut();
+            }
+        });
+        
+        $('#topButton').click(function () {
+            $('html, body').animate({ scrollTop: 0 }, 'slow');
+            return false;
+        });
+        
+        $('#bottomButton').click(function () {
+            $('html, body').animate({ scrollTop: $(document).height() }, 'slow');
+            return false;
+        });
+        
+        $('#copyButton').click(function () {
+            let text = '';
+            $('table tbody tr').each(function () {
+                let row = $(this).find('td').map(function () {
+                    return $(this).text();
+                }).get().join('\t');
+                text += row + '\n';
+            });
+            navigator.clipboard.writeText(text).then(() => {
+                alert('All records copied!');
+            });
+        });
+        
+        $('.copy-url').click(function () {
+            let url = $(this).data('url');
+            let id = $(this).data('id');
+            let source = $(this).data('source');
+            
+            navigator.clipboard.writeText(url).then(() => {
+                alert('URL copied: ' + url);
+                
+                // Mark the URL as used
+                $.get(`/mark_used/${id}/${source}`, function (response) {
+                    location.reload();  // Reload the page to update the status
+                });
+            });
+        });
+        
+        $('#fetchNewButton').click(function () {
+            alert('Fetching new URLs...'); // Isko backend API se connect karein
+        });
+    </script>
+</body>
+</html>
