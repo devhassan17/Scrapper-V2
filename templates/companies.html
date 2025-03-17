@@ -24,6 +24,9 @@
             top: 20px;
             right: 20px;
         }
+        .filter-buttons {
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
@@ -33,16 +36,15 @@
     <div class="container mt-5">
         <h1 class="text-center">{{ source.capitalize() }} Companies</h1>
         
-        <!-- Fetch New Button -->
-        <div class="text-center mb-3">
-            <button id="fetchNewButton" class="btn btn-warning">Fetch New</button>
+        <!-- Filter Buttons -->
+        <div class="filter-buttons text-center mb-3">
+            <button id="filterAll" class="btn btn-primary">Show All</button>
+            <button id="filterVerified" class="btn btn-success">Show Verified</button>
+            <button id="filterNotVerified" class="btn btn-warning">Show Not Verified</button>
+            <button id="startFiltering" class="btn btn-danger">Start Filtering</button>
         </div>
         
-        <!-- Copy All Records Button -->
-        <div class="text-center mb-3">
-            <button id="copyButton" class="btn btn-info">Copy All Records</button>
-        </div>
-        
+        <!-- Companies Table -->
         <table class="table table-bordered table-striped">
             <thead class="table-dark">
                 <tr>
@@ -52,12 +54,12 @@
                     <th>Copy</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="companiesTableBody">
                 {% for company in companies %}
                     <tr>
                         <td>{{ company[0] }}</td>
                         <td><a href="{{ company[1] }}" target="_blank">{{ company[1] }}</a></td>
-                        <td>{{ "Used" if company[2] else "Not Used" }}</td>
+                        <td>{{ "Verified" if company[2] else "Not Verified" }}</td>
                         <td><button class="btn btn-sm btn-primary copy-url" data-id="{{ company[0] }}" data-source="{{ source }}" data-url="{{ company[1] }}">Copy</button></td>
                     </tr>
                 {% endfor %}
@@ -75,59 +77,36 @@
     <button id="bottomButton" class="btn btn-warning">Bottom</button>
     
     <script>
-        $(window).scroll(function () {
-            if ($(this).scrollTop() > 100) {
-                $('#topButton').fadeIn();
-            } else {
-                $('#topButton').fadeOut();
-            }
-            if ($(this).scrollTop() + $(this).innerHeight() < $(document).height() - 100) {
-                $('#bottomButton').fadeIn();
-            } else {
-                $('#bottomButton').fadeOut();
+        $(document).ready(function () {
+            const source = "{{ source }}";  // Current source from the template
+            const filterStatus = "{{ filter_status }}";  // Filter status from the template
+    
+            if (filterStatus) {
+                filterCompanies(filterStatus);  // Apply filtering automatically
             }
         });
-        
-        $('#topButton').click(function () {
-            $('html, body').animate({ scrollTop: 0 }, 'slow');
-            return false;
-        });
-        
-        $('#bottomButton').click(function () {
-            $('html, body').animate({ scrollTop: $(document).height() }, 'slow');
-            return false;
-        });
-        
-        $('#copyButton').click(function () {
-            let text = '';
-            $('table tbody tr').each(function () {
-                let row = $(this).find('td').map(function () {
-                    return $(this).text();
-                }).get().join('\t');
-                text += row + '\n';
+    
+        function filterCompanies(status) {
+            const source = "{{ source }}";  // Get the current source from the template
+            $.get(`/filter_companies/${source}/${status}`, function (data) {
+                const newBody = $(data).find('#companiesTableBody').html();
+                $('#companiesTableBody').html(newBody);
+                console.log("Filtering applied for status:", status);  // Debugging
             });
-            navigator.clipboard.writeText(text).then(() => {
-                alert('All records copied!');
+        }
+    
+        $('#startFiltering').click(function () {
+            const source = "{{ source }}";  // Get the current source from the template
+            console.log("Start Filtering button clicked for source:", source);  // Debugging
+    
+            $.get(`/start_filtering/${source}`, function (response) {
+                console.log("Response from server:", response);  // Debugging
+                alert(response.message);  // Show success message
+                location.reload();  // Reload the page to show updated status
+            }).fail(function (error) {
+                console.error("Error occurred:", error);  // Debugging
+                alert("An error occurred while starting the filtering process.");
             });
-        });
-        
-        $('.copy-url').click(function () {
-            let url = $(this).data('url');
-            let id = $(this).data('id');
-            let source = $(this).data('source');
-            
-            navigator.clipboard.writeText(url).then(() => {
-                alert('URL copied: ' + url);
-                
-                // Mark the URL as used
-                $.get(`/mark_used/${id}/${source}`, function (response) {
-                    location.reload();  // Reload the page to update the status
-                });
-            });
-        });
-        
-        $('#fetchNewButton').click(function () {
-            alert('Fetching new URLs...'); // Isko backend API se connect karein
         });
     </script>
 </body>
