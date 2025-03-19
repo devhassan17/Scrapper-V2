@@ -314,7 +314,7 @@ def fetch_new_urls():
 
 if __name__ == "__main__":
     setup_database()
-    # asyncio.run(fetch_urls_on_start())  # Fetch URLs on app start
+    asyncio.run(fetch_urls_on_start())  # Fetch URLs on app start
     scheduler.add_job(check_for_new_urls, 'interval', weeks=1)
     scheduler.start()
     app.run(debug=True)
