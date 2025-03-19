@@ -296,21 +296,40 @@ def new_records():
         conn.close()
     return render_template("new_records.html", new_records=new_records, count=len(new_records))
 
-@app.route('/fetch_new_urls')
+async def check_for_new_urls(source=None):
+    if source is None:
+        # Default source ka use karein (e.g., first source in SITEMAP_SOURCES)
+        source = list(SITEMAP_SOURCES.keys())[0]
+    
+    print(f"Checking for new URLs in {source} sitemap...")
+    sitemap_url = SITEMAP_SOURCES.get(source)
+    if not sitemap_url:
+        return []
+
+    sitemap_urls = await get_sitemap_urls(sitemap_url)
+    company_urls = await get_company_urls_ordered(sitemap_urls)
+    new_urls = save_to_database(company_urls, source)
+    
+    if new_urls:
+        print(f"New URLs found for {source}: {len(new_urls)}")
+    else:
+        print(f"No new URLs found for {source}.")
+    
+    return new_urls
+
+@app.route('/fetch_new_urls/<source>')
 @login_required
-def fetch_new_urls():
+def fetch_new_urls(source):
     try:
-        # Submit the async task to the executor
-        future = executor.submit(asyncio.run, check_for_new_urls())
-        new_urls = future.result()
+        # Run the async function synchronously
+        new_urls = asyncio.run(check_for_new_urls(source))
         
         if new_urls:  # If new URLs were found
-            return "New records successfully added"  # Return plain string
+            return f"New records successfully added for {source}", 200
         else:
-            return "No new records found"  # Return plain string
+            return f"No new records found for {source}", 200
     except Exception as e:
-        return f"Error: {str(e)}", 500  # Return plain string with error message
-
+        return f"Error: {str(e)}", 500
 
 if __name__ == "__main__":
     setup_database()

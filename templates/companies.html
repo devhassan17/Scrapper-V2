@@ -42,7 +42,7 @@
             <button id="filterVerified" class="btn btn-success">Show Verified</button>
             <button id="filterNotVerified" class="btn btn-warning">Show Not Verified</button>
             <button id="startFiltering" class="btn btn-danger">Start Filtering</button>
-            <button onclick="window.location.href='/fetch_new_urls'" class="btn btn-info">Fetch New URLs</button>
+            <button onclick="fetchNewURLs('{{ source }}')" class="btn btn-info">Fetch New URLs</button>
         </div>
         
         <!-- Companies Table -->
@@ -86,5 +86,19 @@
     
     <!-- Scroll to Bottom Button -->
     <button id="bottomButton" class="btn btn-warning">Bottom</button>
+
+    <script>
+        function fetchNewURLs(source) {
+            fetch(`/fetch_new_urls/${source}`)
+                .then(response => response.text())
+                .then(data => {
+                    alert(data);  // Show the result message
+                    location.reload();  // Reload the page to show updated data
+                })
+                .catch(error => {
+                    alert("Error fetching new URLs: " + error);
+                });
+        }
+    </script>
 </body>
 </html>
