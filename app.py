@@ -1,4 +1,5 @@
 from flask import Flask, render_template, send_file, jsonify, request, redirect, url_for , session
+from flask_executor import Executor
 import sqlite3
 import xml.etree.ElementTree as ET
 from fpdf import FPDF
@@ -298,8 +299,9 @@ def new_records():
 @login_required
 def fetch_new_urls():
     try:
-        # Run the async function synchronously
-        new_urls = asyncio.run(check_for_new_urls())
+        # Submit the async task to the executor
+        future = executor.submit(asyncio.run, check_for_new_urls())
+        new_urls = future.result()
         
         if new_urls:  # If new URLs were found
             return "New records successfully added"  # Return plain string
