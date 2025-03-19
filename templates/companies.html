@@ -42,6 +42,7 @@
             <button id="filterVerified" class="btn btn-success">Show Verified</button>
             <button id="filterNotVerified" class="btn btn-warning">Show Not Verified</button>
             <button id="startFiltering" class="btn btn-danger">Start Filtering</button>
+            <button onclick="window.location.href='/fetch_new_urls'" class="btn btn-info">Fetch New URLs</button>
         </div>
         
         <!-- Companies Table -->
@@ -59,7 +60,17 @@
                     <tr>
                         <td>{{ company[0] }}</td>
                         <td><a href="{{ company[1] }}" target="_blank">{{ company[1] }}</a></td>
-                        <td>{{ "Verified" if company[2] else "Not Verified" }}</td>
+                        <td>
+                            <form action="/update_status" method="POST" class="status-form">
+                                <input type="hidden" name="source" value="{{ source }}">
+                                <input type="hidden" name="id" value="{{ company[0] }}">
+                                <select name="status" class="form-select">
+                                    <option value="1" {% if company[2] == 1 %}selected{% endif %}>Verified</option>
+                                    <option value="0" {% if company[2] == 0 %}selected{% endif %}>Not Verified</option>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-primary mt-2">Update</button>
+                            </form>
+                        </td>
                         <td><button class="btn btn-sm btn-primary copy-url" data-id="{{ company[0] }}" data-source="{{ source }}" data-url="{{ company[1] }}">Copy</button></td>
                     </tr>
                 {% endfor %}
@@ -75,39 +86,5 @@
     
     <!-- Scroll to Bottom Button -->
     <button id="bottomButton" class="btn btn-warning">Bottom</button>
-    
-    <script>
-        $(document).ready(function () {
-            const source = "{{ source }}";  // Current source from the template
-            const filterStatus = "{{ filter_status }}";  // Filter status from the template
-    
-            if (filterStatus) {
-                filterCompanies(filterStatus);  // Apply filtering automatically
-            }
-        });
-    
-        function filterCompanies(status) {
-            const source = "{{ source }}";  // Get the current source from the template
-            $.get(`/filter_companies/${source}/${status}`, function (data) {
-                const newBody = $(data).find('#companiesTableBody').html();
-                $('#companiesTableBody').html(newBody);
-                console.log("Filtering applied for status:", status);  // Debugging
-            });
-        }
-    
-        $('#startFiltering').click(function () {
-            const source = "{{ source }}";  // Get the current source from the template
-            console.log("Start Filtering button clicked for source:", source);  // Debugging
-    
-            $.get(`/start_filtering/${source}`, function (response) {
-                console.log("Response from server:", response);  // Debugging
-                alert(response.message);  // Show success message
-                location.reload();  // Reload the page to show updated status
-            }).fail(function (error) {
-                console.error("Error occurred:", error);  // Debugging
-                alert("An error occurred while starting the filtering process.");
-            });
-        });
-    </script>
 </body>
 </html>

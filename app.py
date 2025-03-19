@@ -1,4 +1,4 @@
-from flask import Flask, render_template, send_file, jsonify
+from flask import Flask, render_template, send_file, jsonify, request, redirect, url_for , session
 import sqlite3
 import xml.etree.ElementTree as ET
 from fpdf import FPDF
@@ -8,10 +8,16 @@ import aiohttp
 import asyncio
 import certifi
 import ssl
+from datetime import timedelta
 import re  # For regex parsing
 
 app = Flask(__name__)
+app.secret_key = "Qwerty123!@#" 
+app.permanent_session_lifetime = timedelta(days=1) 
 scheduler = BackgroundScheduler()
+
+USERNAME = "Justin"
+PASSWORD = "Justin123!@#Scrapper"
 
 # List of sitemap sources
 SITEMAP_SOURCES = {
@@ -71,6 +77,39 @@ async def check_image_presence(session, url):
     except Exception as e:
         print(f"Error fetching {url}: {e}")
     return (url, 0)  # Not Verified in case of any error
+
+# Function to check if user is logged in
+def is_logged_in():
+    return session.get("logged_in")
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        if username == USERNAME and password == PASSWORD:
+            session.permanent = True  # Enables session lifetime tracking
+            session["logged_in"] = True
+            return redirect(url_for("index"))
+        else:
+            return "Invalid credentials, try again!"
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+# Protect all existing routes
+def login_required(func):
+    def wrapper(*args, **kwargs):
+        if not is_logged_in():
+            return redirect(url_for("login"))
+        return func(*args, **kwargs)
+    wrapper.__name__ = func.__name__
+    return wrapper
 
 # Initialize database for each company
 def setup_database():
@@ -147,25 +186,30 @@ def generate_pdf():
     return "companies.pdf"
 
 @app.route('/')
+@login_required
 def index():
     return render_template("index.html", sources=SITEMAP_SOURCES.keys())
 
 @app.route('/companies/<source>')
+@login_required
 def companies(source):
     companies = fetch_companies(source)
     return render_template("companies.html", companies=companies, source=source)
 
 @app.route('/filter_companies/<source>/<status>')
+@login_required
 def filter_companies(source, status):
     companies = fetch_companies(source, status)
     return render_template("companies.html", companies=companies, source=source, filter_status=status)
 
 @app.route('/download')
+@login_required
 def download():
     pdf_file = generate_pdf()
     return send_file(pdf_file, as_attachment=True)
 
 @app.route('/start_filtering/<source>')
+@login_required
 async def start_filtering(source):
     print(f"Filtering started for source: {source}")  # Log when filtering starts
     companies = fetch_companies(source)  # Fetch all companies
@@ -202,8 +246,69 @@ async def fetch_urls_on_start():
         save_to_database(company_urls, source)
         print(f"Saved {len(company_urls)} URLs for {source}.")
 
+# Function to check for new URLs in sitemap
+async def check_for_new_urls():
+    print("Checking for new URLs in sitemaps...")
+    for source, sitemap_url in SITEMAP_SOURCES.items():
+        print(f"Checking {source}...")
+        sitemap_urls = await get_sitemap_urls(sitemap_url)
+        company_urls = await get_company_urls_ordered(sitemap_urls)
+        new_urls = save_to_database(company_urls, source)
+        if new_urls:
+            print(f"New URLs found for {source}: {len(new_urls)}")
+        else:
+            print(f"No new URLs found for {source}.")
+
+# Schedule the task to check for new URLs every week
+
+@app.route('/update_status', methods=['POST'])
+@login_required
+def update_status():
+    # Get form data
+    source = request.form.get('source')
+    company_id = request.form.get('id')
+    new_status = request.form.get('status')
+
+    if not all([source, company_id, new_status]):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    conn = sqlite3.connect("companies.db")
+    cursor = conn.cursor()
+    cursor.execute(f"UPDATE {source} SET verified = ? WHERE id = ?", (new_status, company_id))
+    conn.commit()
+    conn.close()
+
+    # Redirect back to the companies page
+    return redirect(url_for('companies', source=source))
+
+
+@app.route('/new_records')
+@login_required
+def new_records():
+    new_records = []
+    for source in SITEMAP_SOURCES.keys():
+        conn = sqlite3.connect("companies.db")
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT url FROM {source} WHERE scraped_at >= datetime('now', '-7 days')")
+        new_records.extend([row[0] for row in cursor.fetchall()])
+        conn.close()
+    return render_template("new_records.html", new_records=new_records, count=len(new_records))
+
+@app.route('/fetch_new_urls')
+@login_required
+async def fetch_new_urls():
+    new_urls = await check_for_new_urls()  # Trigger function to check for new URLs
+    
+    if new_urls:  # Agar naye URLs mil gaye
+        return {"message": "New records successfully added"}  # Sirf tab message return hoga
+    else: 
+         return {"message": "No new records found"}  
+      # Agar koi naya record nahi mila, to empty JSON response
+
+
 if __name__ == "__main__":
     setup_database()
     asyncio.run(fetch_urls_on_start())  # Fetch URLs on app start
+    scheduler.add_job(check_for_new_urls, 'interval', weeks=1)
     scheduler.start()
     app.run(debug=True)

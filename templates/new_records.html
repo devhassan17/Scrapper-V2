@@ -7,7 +7,7 @@
     <style>
         body { font-family: Arial, sans-serif; text-align: center; margin: 20px; background: #f8f9fa; }
         .container { max-width: 800px; margin: auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-        h2 { color: #333; }
+        h2, h3 { color: #333; }
         ul { list-style-type: none; padding: 0; }
         li { margin: 5px 0; }
         a { text-decoration: none; color: blue; }
@@ -17,15 +17,34 @@
 <body>
     <div class="container">
         <h2>Newly Fetched Companies (Total: {{ count }})</h2>
-        {% if new_records %}
-            <ul>
-                {% for company in new_records %}
-                    <li><a href="{{ company }}" target="_blank">{{ company }}</a></li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p>No new companies found.</p>
-        {% endif %}
+
+        {% set sources = {
+            "zorggids": "https://zorggids-nederland.nl/sitemap_index.xml",
+            "bedrijvengidsen": "https://bedrijvengidsen-nederland.nl/sitemap_index.xml",
+            "bedrijvenpagina": "https://bedrijvenpagina-online.nl/sitemap_index.xml",
+            "onderwijsgids": "https://onderwijsgids-nederland.nl/sitemap_index.xml"
+        } %}
+
+        {% for source, url in sources.items() %}
+            {% set source_records = [] %}
+            {% for record in new_records %}
+                {% if source in record %}
+                    {% set _ = source_records.append(record) %}
+                {% endif %}
+            {% endfor %}
+
+            <h3>{{ source | capitalize }}</h3>
+            {% if source_records %}
+                <ul>
+                    {% for company in source_records %}
+                        <li><a href="{{ company }}" target="_blank">{{ company }}</a></li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No new companies found for {{ source }}.</p>
+            {% endif %}
+        {% endfor %}
+
         <a class="back-btn" href="{{ url_for('index') }}">Back to Home</a>
     </div>
 </body>
