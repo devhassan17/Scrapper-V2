@@ -296,14 +296,17 @@ def new_records():
 
 @app.route('/fetch_new_urls')
 @login_required
-async def fetch_new_urls():
-    new_urls = await check_for_new_urls()  # Trigger function to check for new URLs
-    
-    if new_urls:  # Agar naye URLs mil gaye
-        return {"message": "New records successfully added"}  # Sirf tab message return hoga
-    else: 
-         return {"message": "No new records found"}  
-      # Agar koi naya record nahi mila, to empty JSON response
+def fetch_new_urls():
+    try:
+        # Run the async function synchronously
+        new_urls = asyncio.run(check_for_new_urls())
+        
+        if new_urls:  # If new URLs were found
+            return "New records successfully added"  # Return plain string
+        else:
+            return "No new records found"  # Return plain string
+    except Exception as e:
+        return f"Error: {str(e)}", 500  # Return plain string with error message
 
 
 if __name__ == "__main__":
