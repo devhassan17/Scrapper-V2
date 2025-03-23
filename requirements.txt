@@ -36,8 +36,10 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.1
 pyparsing==3.2.1
 PySocks==1.7.1
+redis==5.2.1
 requests==2.32.3
 requests-oauthlib==2.0.0
+rq==2.1.0
 rsa==4.9
 selenium==4.29.0
 six==1.17.0

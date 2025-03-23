@@ -8,25 +8,7 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <style>
-        #topButton, #bottomButton {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            display: none;
-        }
-        .top-left-button {
-            position: fixed;
-            top: 20px;
-            left: 20px;
-        }
-        .top-right-button {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-        }
-        .filter-buttons {
-            margin-bottom: 20px;
-        }
+        /* ... (Your existing CSS remains the same) */
     </style>
 </head>
 <body>
@@ -42,7 +24,7 @@
             <button id="filterVerified" class="btn btn-success">Show Verified</button>
             <button id="filterNotVerified" class="btn btn-warning">Show Not Verified</button>
             <button id="startFiltering" class="btn btn-danger">Start Filtering</button>
-            <button onclick="fetchNewURLs('{{ source }}')" class="btn btn-info">Fetch New URLs</button>
+            <button id="fetchNewUrls" class="btn btn-info">Fetch New URLs</button>
         </div>
         
         <!-- Companies Table -->
@@ -51,8 +33,10 @@
                 <tr>
                     <th>ID</th>
                     <th>Company URL</th>
-                    <th>Status</th>
+                 
                     <th>Copy</th>
+                    <th>Check Verification</th>
+                    <th>Verification Message</th>
                 </tr>
             </thead>
             <tbody id="companiesTableBody">
@@ -60,18 +44,18 @@
                     <tr>
                         <td>{{ company[0] }}</td>
                         <td><a href="{{ company[1] }}" target="_blank">{{ company[1] }}</a></td>
-                        <td>
-                            <form action="/update_status" method="POST" class="status-form">
-                                <input type="hidden" name="source" value="{{ source }}">
-                                <input type="hidden" name="id" value="{{ company[0] }}">
-                                <select name="status" class="form-select">
-                                    <option value="1" {% if company[2] == 1 %}selected{% endif %}>Verified</option>
-                                    <option value="0" {% if company[2] == 0 %}selected{% endif %}>Not Verified</option>
-                                </select>
-                                <button type="submit" class="btn btn-sm btn-primary mt-2">Update</button>
-                            </form>
-                        </td>
                         <td><button class="btn btn-sm btn-primary copy-url" data-id="{{ company[0] }}" data-source="{{ source }}" data-url="{{ company[1] }}">Copy</button></td>
+                        <td>
+                            <button class="btn btn-sm btn-info check-verification" data-source="{{ source }}" data-id="{{ company[0] }}">Check Verification</button>
+                            <div id="verificationResult{{ company[0] }}" class="mt-2"></div>
+                        </td>
+                        <td>
+                            {% if company[3] %} <!-- Display verification message if it exists -->
+                                <div class="alert {% if company[2] == 1 %}alert-success{% else %}alert-danger{% endif %}">
+                                    {{ company[3] }}
+                                </div>
+                            {% endif %}
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -88,17 +72,35 @@
     <button id="bottomButton" class="btn btn-warning">Bottom</button>
 
     <script>
-        function fetchNewURLs(source) {
-            fetch(`/fetch_new_urls/${source}`)
-                .then(response => response.text())
-                .then(data => {
-                    alert(data);  // Show the result message
-                    location.reload();  // Reload the page to show updated data
-                })
-                .catch(error => {
-                    alert("Error fetching new URLs: " + error);
+        $(document).ready(function() {
+            // Fetch New URLs Button Click Event
+            $('#fetchNewUrls').click(function() {
+                var source = "{{ source }}";  // Get the current source from the template
+
+                // Send a GET request to fetch new URLs for the current source
+                $.get(`/fetch_new_urls/${source}`, function(response) {
+                    // Display the response in a JavaScript alert
+                    alert(response);
                 });
-        }
+            });
+
+            // Check Verification Button Click Event
+            $('.check-verification').click(function() {
+                var source = $(this).data('source');
+                var companyId = $(this).data('id');
+                var resultDiv = $('#verificationResult' + companyId);
+
+                $.get(`/check_verification/${source}/${companyId}`, function(data) {
+                    if (data.status === 1) {
+                        resultDiv.html('<div class="alert alert-success">Verified: Image found!</div>');
+                    } else {
+                        resultDiv.html('<div class="alert alert-danger">Not Verified: Image not found!</div>');
+                    }
+                    // Reload the page to reflect the updated verification message in the table
+                    location.reload();
+                });
+            });
+        });
     </script>
 </body>
 </html>

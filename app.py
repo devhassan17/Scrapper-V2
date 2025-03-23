@@ -11,6 +11,7 @@ import certifi
 import ssl
 from datetime import timedelta
 import re  # For regex parsing
+from bs4 import BeautifulSoup  # For parsing HTML
 
 app = Flask(__name__)
 executor = Executor(app)
@@ -28,6 +29,40 @@ SITEMAP_SOURCES = {
     "bedrijvenpagina": "https://bedrijvenpagina-online.nl/sitemap_index.xml",
     "onderwijsgids": "https://onderwijsgids-nederland.nl/sitemap_index.xml",
 }
+
+
+def is_logged_in():
+    return session.get("logged_in")
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        if username == USERNAME and password == PASSWORD:
+            session.permanent = True  # Enables session lifetime tracking
+            session["logged_in"] = True
+            return redirect(url_for("index"))
+        else:
+            return "Invalid credentials, try again!"
+
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+# Protect all existing routes
+def login_required(func):
+    def wrapper(*args, **kwargs):
+        if not is_logged_in():
+            return redirect(url_for("login"))
+        return func(*args, **kwargs)
+    wrapper.__name__ = func.__name__
+    return wrapper
+
 
 # Function to extract sitemap URLs asynchronously
 async def get_sitemap_urls(sitemap_url):
@@ -63,7 +98,7 @@ async def get_company_urls_ordered(sitemap_urls):
 
     return [url for url in company_urls if "/bedrijven/" in url]
 
-# Asynchronous function to check for the presence of an image with the class 'swiper-slide-image'
+# Function to check for the presence of an image with the class 'swiper-slide-image' using BeautifulSoup
 async def check_image_presence(session, url):
     try:
         # Use certifi's certificate bundle
@@ -71,47 +106,15 @@ async def check_image_presence(session, url):
         async with session.get(url, ssl=ssl_context) as response:
             if response.status == 200:
                 content = await response.text()
-                # Use regex to check for the presence of the image class
-                if re.search(r'<img[^>]*class="[^"]*\bswiper-slide-image\b[^"]*"', content):
-                    return (url, 1)  # Verified
+                soup = BeautifulSoup(content, 'html.parser')
+                # Check for the presence of the image class
+                if soup.find('img', class_='swiper-slide-image'):
+                    return (url, 1, "Verified: Image found!")  # Verified
                 else:
-                    return (url, 0)  # Not Verified
+                    return (url, 0, "Not Verified: Image not found!")  # Not Verified
     except Exception as e:
         print(f"Error fetching {url}: {e}")
-    return (url, 0)  # Not Verified in case of any error
-
-# Function to check if user is logged in
-def is_logged_in():
-    return session.get("logged_in")
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-
-        if username == USERNAME and password == PASSWORD:
-            session.permanent = True  # Enables session lifetime tracking
-            session["logged_in"] = True
-            return redirect(url_for("index"))
-        else:
-            return "Invalid credentials, try again!"
-
-    return render_template("login.html")
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-# Protect all existing routes
-def login_required(func):
-    def wrapper(*args, **kwargs):
-        if not is_logged_in():
-            return redirect(url_for("login"))
-        return func(*args, **kwargs)
-    wrapper.__name__ = func.__name__
-    return wrapper
+    return (url, 0, "Not Verified: Error checking URL")  # Not Verified in case of any error
 
 # Initialize database for each company
 def setup_database():
@@ -124,7 +127,8 @@ def setup_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT UNIQUE,
                 scraped_at TEXT,
-                verified INTEGER DEFAULT 0  -- 0 for Not Verified, 1 for Verified
+                verified INTEGER DEFAULT 0,  -- 0 for Not Verified, 1 for Verified
+                verification_message TEXT    -- New column for verification message
             )
         """)
     
@@ -161,11 +165,11 @@ def fetch_companies(source, status="all"):
     conn = sqlite3.connect("companies.db")
     cursor = conn.cursor()
     if status == "verified":
-        cursor.execute(f"SELECT id, url, verified FROM {source} WHERE verified = 1 ORDER BY id DESC")
+        cursor.execute(f"SELECT id, url, verified, verification_message FROM {source} WHERE verified = 1 ORDER BY id DESC")
     elif status == "not_verified":
-        cursor.execute(f"SELECT id, url, verified FROM {source} WHERE verified = 0 ORDER BY id DESC")
+        cursor.execute(f"SELECT id, url, verified, verification_message FROM {source} WHERE verified = 0 ORDER BY id DESC")
     else:
-        cursor.execute(f"SELECT id, url, verified FROM {source} ORDER BY id DESC")
+        cursor.execute(f"SELECT id, url, verified, verification_message FROM {source} ORDER BY id DESC")
     companies = cursor.fetchall()
     conn.close()
     return companies
@@ -182,7 +186,7 @@ def generate_pdf():
         pdf.cell(200, 10, f"{source.capitalize()} Companies", ln=True, align='L')
         companies = fetch_companies(source)
         for company in companies:
-            pdf.cell(200, 10, f"{company[1]} - {'Verified' if company[2] else 'Not Verified'}", ln=True)
+            pdf.cell(200, 10, f"{company[1]} - {'Verified' if company[2] else 'Not Verified'} - {company[3]}", ln=True)
     
     pdf.output("companies.pdf")
     return "companies.pdf"
@@ -210,58 +214,30 @@ def download():
     pdf_file = generate_pdf()
     return send_file(pdf_file, as_attachment=True)
 
-@app.route('/start_filtering/<source>')
+@app.route('/check_verification/<source>/<int:company_id>')
 @login_required
-async def start_filtering(source):
-    print(f"Filtering started for source: {source}")  # Log when filtering starts
-    companies = fetch_companies(source)  # Fetch all companies
-    print(f"Total companies to process: {len(companies)}")  # Log the number of companies
-
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for company in companies:
-            url = company[1]
-            tasks.append(check_image_presence(session, url))
-        
-        results = await asyncio.gather(*tasks)
-        
-        for url, status in results:
-            update_company_status(source, url, status)
-            print(f"Processed: {url} - {'Verified' if status == 1 else 'Not Verified'}")  # Log each URL's status
-    
-    print(f"Filtering completed for source: {source}")  # Log when filtering is done
-    return jsonify({"message": "Filtering process completed!"})
-
-def update_company_status(source, url, status):
+async def check_verification(source, company_id):
     conn = sqlite3.connect("companies.db")
     cursor = conn.cursor()
-    cursor.execute(f"UPDATE {source} SET verified = ? WHERE url = ?", (status, url))
-    conn.commit()
+    cursor.execute(f"SELECT url FROM {source} WHERE id = ?", (company_id,))
+    company_url = cursor.fetchone()[0]
     conn.close()
 
-# Automatically fetch URLs from sitemap on app start
-async def fetch_urls_on_start():
-    for source, sitemap_url in SITEMAP_SOURCES.items():
-        print(f"Fetching URLs for {source}...")
-        sitemap_urls = await get_sitemap_urls(sitemap_url)
-        company_urls = await get_company_urls_ordered(sitemap_urls)
-        save_to_database(company_urls, source)
-        print(f"Saved {len(company_urls)} URLs for {source}.")
+    async with aiohttp.ClientSession() as session:
+        url, status, message = await check_image_presence(session, company_url)
 
-# Function to check for new URLs in sitemap
-async def check_for_new_urls():
-    print("Checking for new URLs in sitemaps...")
-    for source, sitemap_url in SITEMAP_SOURCES.items():
-        print(f"Checking {source}...")
-        sitemap_urls = await get_sitemap_urls(sitemap_url)
-        company_urls = await get_company_urls_ordered(sitemap_urls)
-        new_urls = save_to_database(company_urls, source)
-        if new_urls:
-            print(f"New URLs found for {source}: {len(new_urls)}")
-        else:
-            print(f"No new URLs found for {source}.")
+        # Save the verification status and message in the database
+        conn = sqlite3.connect("companies.db")
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            UPDATE {source}
+            SET verified = ?, verification_message = ?
+            WHERE id = ?
+        """, (status, message, company_id))
+        conn.commit()
+        conn.close()
 
-# Schedule the task to check for new URLs every week
+        return jsonify({"url": url, "status": status, "message": message})
 
 @app.route('/update_status', methods=['POST'])
 @login_required
@@ -283,57 +259,52 @@ def update_status():
     # Redirect back to the companies page
     return redirect(url_for('companies', source=source))
 
+# Function to check for new URLs in sitemap
+async def check_for_new_urls():
+    print("Checking for new URLs in sitemaps...")
+    for source, sitemap_url in SITEMAP_SOURCES.items():
+        print(f"Checking {source}...")
+        sitemap_urls = await get_sitemap_urls(sitemap_url)
+        company_urls = await get_company_urls_ordered(sitemap_urls)
+        new_urls = save_to_database(company_urls, source)
+        if new_urls:
+            print(f"New URLs found for {source}: {len(new_urls)}")
+        else:
+            print(f"No new URLs found for {source}.")
 
-@app.route('/new_records')
+# Route to manually trigger fetching new URLs
+@app.route('/fetch_new_urls/<source>')
 @login_required
-def new_records():
-    new_records = []
-    for source in SITEMAP_SOURCES.keys():
-        conn = sqlite3.connect("companies.db")
-        cursor = conn.cursor()
-        cursor.execute(f"SELECT url FROM {source} WHERE scraped_at >= datetime('now', '-7 days')")
-        new_records.extend([row[0] for row in cursor.fetchall()])
-        conn.close()
-    return render_template("new_records.html", new_records=new_records, count=len(new_records))
+async def fetch_new_urls(source):
+    if source not in SITEMAP_SOURCES:
+        return "Invalid source", 400
 
-async def check_for_new_urls(source=None):
-    if source is None:
-        # Default source ka use karein (e.g., first source in SITEMAP_SOURCES)
-        source = list(SITEMAP_SOURCES.keys())[0]
-    
-    print(f"Checking for new URLs in {source} sitemap...")
-    sitemap_url = SITEMAP_SOURCES.get(source)
-    if not sitemap_url:
-        return []
-
+    # Fetch new URLs for the specified source
+    sitemap_url = SITEMAP_SOURCES[source]
     sitemap_urls = await get_sitemap_urls(sitemap_url)
     company_urls = await get_company_urls_ordered(sitemap_urls)
     new_urls = save_to_database(company_urls, source)
-    
-    if new_urls:
-        print(f"New URLs found for {source}: {len(new_urls)}")
-    else:
-        print(f"No new URLs found for {source}.")
-    
-    return new_urls
 
-@app.route('/fetch_new_urls/<source>')
-@login_required
-def fetch_new_urls(source):
-    try:
-        # Run the async function synchronously
-        new_urls = asyncio.run(check_for_new_urls(source))
-        
-        if new_urls:  # If new URLs were found
-            return f"New records successfully added for {source}", 200
-        else:
-            return f"No new records found for {source}", 200
-    except Exception as e:
-        return f"Error: {str(e)}", 500
+    if new_urls:
+        message = f"New URLs found for {source}: {len(new_urls)}"
+    else:
+        message = f"No new URLs found for {source}."
+
+    return message  # Return a simple message
+
+
+# Automatically fetch URLs from sitemap on app start
+async def fetch_urls_on_start():
+    for source, sitemap_url in SITEMAP_SOURCES.items():
+        print(f"Fetching URLs for {source}...")
+        sitemap_urls = await get_sitemap_urls(sitemap_url)
+        company_urls = await get_company_urls_ordered(sitemap_urls)
+        save_to_database(company_urls, source)
+        print(f"Saved {len(company_urls)} URLs for {source}.")
 
 if __name__ == "__main__":
     setup_database()
     asyncio.run(fetch_urls_on_start())  # Fetch URLs on app start
-    scheduler.add_job(check_for_new_urls, 'interval', weeks=1)
+    scheduler.add_job(check_for_new_urls, 'interval', weeks=1)  # Schedule automatic fetching
     scheduler.start()
     app.run(debug=True)
