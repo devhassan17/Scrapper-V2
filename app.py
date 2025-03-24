@@ -1,5 +1,4 @@
-from flask import Flask, render_template, send_file, jsonify, request, redirect, url_for , session
-from flask_executor import Executor
+from flask import Flask, render_template, send_file, jsonify, request, redirect, url_for
 import sqlite3
 import xml.etree.ElementTree as ET
 from fpdf import FPDF
@@ -9,18 +8,11 @@ import aiohttp
 import asyncio
 import certifi
 import ssl
-from datetime import timedelta
-import re  # For regex parsing
+import re
 from bs4 import BeautifulSoup  # For parsing HTML
 
 app = Flask(__name__)
-executor = Executor(app)
-app.secret_key = "Qwerty123!@#" 
-app.permanent_session_lifetime = timedelta(days=1) 
 scheduler = BackgroundScheduler()
-
-USERNAME = "Justin"
-PASSWORD = "Justin123!@#Scrapper"
 
 # List of sitemap sources
 SITEMAP_SOURCES = {
@@ -29,40 +21,6 @@ SITEMAP_SOURCES = {
     "bedrijvenpagina": "https://bedrijvenpagina-online.nl/sitemap_index.xml",
     "onderwijsgids": "https://onderwijsgids-nederland.nl/sitemap_index.xml",
 }
-
-
-def is_logged_in():
-    return session.get("logged_in")
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-
-        if username == USERNAME and password == PASSWORD:
-            session.permanent = True  # Enables session lifetime tracking
-            session["logged_in"] = True
-            return redirect(url_for("index"))
-        else:
-            return "Invalid credentials, try again!"
-
-    return render_template("login.html")
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-# Protect all existing routes
-def login_required(func):
-    def wrapper(*args, **kwargs):
-        if not is_logged_in():
-            return redirect(url_for("login"))
-        return func(*args, **kwargs)
-    wrapper.__name__ = func.__name__
-    return wrapper
-
 
 # Function to extract sitemap URLs asynchronously
 async def get_sitemap_urls(sitemap_url):
@@ -192,30 +150,25 @@ def generate_pdf():
     return "companies.pdf"
 
 @app.route('/')
-@login_required
 def index():
     return render_template("index.html", sources=SITEMAP_SOURCES.keys())
 
 @app.route('/companies/<source>')
-@login_required
 def companies(source):
     companies = fetch_companies(source)
     return render_template("companies.html", companies=companies, source=source)
 
 @app.route('/filter_companies/<source>/<status>')
-@login_required
 def filter_companies(source, status):
     companies = fetch_companies(source, status)
     return render_template("companies.html", companies=companies, source=source, filter_status=status)
 
 @app.route('/download')
-@login_required
 def download():
     pdf_file = generate_pdf()
     return send_file(pdf_file, as_attachment=True)
 
 @app.route('/check_verification/<source>/<int:company_id>')
-@login_required
 async def check_verification(source, company_id):
     conn = sqlite3.connect("companies.db")
     cursor = conn.cursor()
@@ -240,7 +193,6 @@ async def check_verification(source, company_id):
         return jsonify({"url": url, "status": status, "message": message})
 
 @app.route('/update_status', methods=['POST'])
-@login_required
 def update_status():
     # Get form data
     source = request.form.get('source')
@@ -274,7 +226,6 @@ async def check_for_new_urls():
 
 # Route to manually trigger fetching new URLs
 @app.route('/fetch_new_urls/<source>')
-@login_required
 async def fetch_new_urls(source):
     if source not in SITEMAP_SOURCES:
         return "Invalid source", 400
@@ -291,7 +242,6 @@ async def fetch_new_urls(source):
         message = f"No new URLs found for {source}."
 
     return message  # Return a simple message
-
 
 # Automatically fetch URLs from sitemap on app start
 async def fetch_urls_on_start():
