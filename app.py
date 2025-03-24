@@ -202,7 +202,6 @@ def companies(source):
     return render_template("companies.html", companies=companies, source=source)
 
 @app.route('/filter_companies/<source>/<status>')
-@login_required
 def filter_companies(source, status):
     companies = fetch_companies(source, status)
     return render_template("companies.html", companies=companies, source=source, filter_status=status)
@@ -214,7 +213,6 @@ def download():
     return send_file(pdf_file, as_attachment=True)
 
 @app.route('/check_verification/<source>/<int:company_id>')
-@login_required
 async def check_verification(source, company_id):
     conn = sqlite3.connect("companies.db")
     cursor = conn.cursor()
@@ -239,7 +237,7 @@ async def check_verification(source, company_id):
         return jsonify({"url": url, "status": status, "message": message})
 
 @app.route('/update_status', methods=['POST'])
-@login_required
+
 def update_status():
     # Get form data
     source = request.form.get('source')
@@ -273,7 +271,6 @@ async def check_for_new_urls():
 
 # Route to manually trigger fetching new URLs
 @app.route('/fetch_new_urls/<source>')
-@login_required
 async def fetch_new_urls(source):
     if source not in SITEMAP_SOURCES:
         return "Invalid source", 400
