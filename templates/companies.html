@@ -8,7 +8,56 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <style>
-        /* ... (Your existing CSS remains the same) */
+        .top-right-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .top-left-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+        }
+        #topButton {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        #bottomButton {
+            position: fixed;
+            bottom: 60px;
+            right: 20px;
+            z-index: 1000;
+        }
+        #idInputContainer {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            z-index: 2000;
+            width: 400px;
+            max-width: 90%;
+        }
+        #idInput {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        .progress-container {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
@@ -23,8 +72,9 @@
             <button id="filterAll" class="btn btn-primary">Show All</button>
             <button id="filterVerified" class="btn btn-success">Show Verified</button>
             <button id="filterNotVerified" class="btn btn-warning">Show Not Verified</button>
-            <button id="startFiltering" class="btn btn-danger">Start Filtering</button>
+            <button id="verifyAll" class="btn btn-danger">Verify Selected</button>
             <button id="fetchNewUrls" class="btn btn-info">Fetch New URLs</button>
+            <button id="copyUnverified" class="btn btn-dark">Copy Unverified IDs</button>
         </div>
         
         <!-- Companies Table -->
@@ -33,7 +83,6 @@
                 <tr>
                     <th>ID</th>
                     <th>Company URL</th>
-                 
                     <th>Copy</th>
                     <th>Check Verification</th>
                     <th>Verification Message</th>
@@ -71,33 +120,270 @@
     <!-- Scroll to Bottom Button -->
     <button id="bottomButton" class="btn btn-warning">Bottom</button>
 
+    <!-- Progress Bar Container -->
+    <div class="progress-container" style="display: none;">
+        <div class="progress">
+            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+        </div>
+        <div class="text-center mt-2">
+            <span id="progressText">0/0 processed</span>
+            <button id="cancelProcessing" class="btn btn-sm btn-danger ml-2">Cancel</button>
+        </div>
+    </div>
+
+    <!-- ID Input Modal -->
+    <div id="idInputContainer">
+        <h4 class="text-center mb-3">Enter Company IDs to Verify</h4>
+        <p>Enter comma-separated IDs (e.g., 1,2,3,4,5)</p>
+        <textarea id="idInput" rows="10" class="form-control mb-3" placeholder="1,2,3,4,5"></textarea>
+        <div class="text-center">
+            <button id="confirmIds" class="btn btn-primary mr-2">Verify Selected</button>
+            <button id="cancelIds" class="btn btn-secondary">Cancel</button>
+        </div>
+    </div>
+
     <script>
         $(document).ready(function() {
+            // Global variables for processing control
+            let isProcessing = false;
+            let currentProcessingIds = [];
+            let processedCount = 0;
+            let successCount = 0;
+            let errorCount = 0;
+            const MAX_PARALLEL_REQUESTS = 10; // Adjust based on server capacity
+            
             // Fetch New URLs Button Click Event
             $('#fetchNewUrls').click(function() {
-                var source = "{{ source }}";  // Get the current source from the template
-
-                // Send a GET request to fetch new URLs for the current source
+                var source = "{{ source }}";
                 $.get(`/fetch_new_urls/${source}`, function(response) {
-                    // Display the response in a JavaScript alert
                     alert(response);
                 });
             });
 
             // Check Verification Button Click Event
             $('.check-verification').click(function() {
-                var source = $(this).data('source');
-                var companyId = $(this).data('id');
-                var resultDiv = $('#verificationResult' + companyId);
+                if (isProcessing) return;
+                
+                var $button = $(this);
+                verifySingleCompany($button);
+            });
 
-                $.get(`/check_verification/${source}/${companyId}`, function(data) {
+            // Verify Selected Button Click Event
+            $('#verifyAll').click(function() {
+                if (isProcessing) return;
+                
+                $('#idInput').val(''); // Clear previous input
+                $('#idInputContainer').show();
+            });
+
+            // Copy Unverified IDs Button Click Event
+            $('#copyUnverified').click(function() {
+                // Find all rows without any alert message
+                const unverifiedIds = [];
+                $('tbody tr').each(function() {
+                    const $row = $(this);
+                    const hasAlert = $row.find('.alert').length > 0;
+                    if (!hasAlert) {
+                        const companyId = $row.find('td:first').text();
+                        unverifiedIds.push(companyId);
+                    }
+                });
+                
+                if (unverifiedIds.length === 0) {
+                    alert('No unverified companies found!');
+                    return;
+                }
+                
+                // Copy to clipboard
+                const idsString = unverifiedIds.join(',');
+                navigator.clipboard.writeText(idsString).then(function() {
+                    const $button = $('#copyUnverified');
+                    $button.text('Copied!');
+                    setTimeout(function() {
+                        $button.text('Copy Unverified IDs');
+                    }, 2000);
+                    alert(`Copied ${unverifiedIds.length} unverified IDs: ${idsString}`);
+                });
+            });
+
+            // Confirm IDs button click handler
+            $('#confirmIds').click(function() {
+                const idInput = $('#idInput').val().trim();
+                if (!idInput) {
+                    alert('Please enter at least one ID');
+                    return;
+                }
+
+                // Parse the input IDs
+                const ids = idInput.split(',')
+                    .map(id => id.trim())
+                    .filter(id => id !== '' && !isNaN(id));
+                
+                if (ids.length === 0) {
+                    alert('Please enter valid numeric IDs');
+                    return;
+                }
+
+                $('#idInputContainer').hide();
+                startBatchProcessing(ids);
+            });
+
+            // Cancel button click handler
+            $('#cancelIds').click(function() {
+                $('#idInputContainer').hide();
+            });
+
+            // Cancel processing button
+            $('#cancelProcessing').click(function() {
+                if (confirm('Are you sure you want to cancel the current verification process?')) {
+                    stopProcessing();
+                }
+            });
+
+            // Function to start batch processing
+            function startBatchProcessing(ids) {
+                isProcessing = true;
+                currentProcessingIds = [...ids];
+                processedCount = 0;
+                successCount = 0;
+                errorCount = 0;
+                
+                // Show progress bar
+                $('.progress-container').show();
+                updateProgress();
+                
+                // Disable all buttons during processing
+                $('.filter-buttons button').prop('disabled', true);
+                $('#verifyAll').prop('disabled', false).text('Stop Processing');
+                
+                // Process in batches
+                processBatch();
+            }
+            
+            // Function to process a batch of IDs
+            async function processBatch() {
+                if (!isProcessing || processedCount >= currentProcessingIds.length) {
+                    finishProcessing();
+                    return;
+                }
+                
+                // Get next batch of IDs
+                const batchSize = Math.min(MAX_PARALLEL_REQUESTS, currentProcessingIds.length - processedCount);
+                const batch = currentProcessingIds.slice(processedCount, processedCount + batchSize);
+                
+                // Process all in batch concurrently
+                await Promise.all(batch.map(id => {
+                    const $button = $(`.check-verification[data-id="${id}"]`);
+                    if ($button.length && !$button.prop('disabled')) {
+                        return verifySingleCompany($button)
+                            .then(() => successCount++)
+                            .catch(() => errorCount++)
+                            .finally(() => {
+                                processedCount++;
+                                updateProgress();
+                            });
+                    } else {
+                        processedCount++;
+                        updateProgress();
+                        return Promise.resolve();
+                    }
+                }));
+                
+                // Process next batch
+                if (isProcessing && processedCount < currentProcessingIds.length) {
+                    setTimeout(processBatch, 100); // Small delay between batches
+                } else {
+                    finishProcessing();
+                }
+            }
+            
+            // Function to verify a single company
+            async function verifySingleCompany($button) {
+                if (!isProcessing && $button.prop('disabled')) return;
+                
+                const source = $button.data('source');
+                const companyId = $button.data('id');
+                const resultDiv = $('#verificationResult' + companyId);
+                
+                $button.prop('disabled', true).text('Checking...');
+                
+                try {
+                    const data = await $.get(`/check_verification/${source}/${companyId}`);
                     if (data.status === 1) {
                         resultDiv.html('<div class="alert alert-success">Verified: Image found!</div>');
                     } else {
                         resultDiv.html('<div class="alert alert-danger">Not Verified: Image not found!</div>');
                     }
-                    // Reload the page to reflect the updated verification message in the table
-                    location.reload();
+                    return data;
+                } catch (error) {
+                    console.error(`Error verifying ID ${companyId}:`, error);
+                    throw error;
+                } finally {
+                    if (!isProcessing) {
+                        $button.prop('disabled', false).text('Check Verification');
+                    }
+                }
+            }
+            
+            // Update progress bar and text
+            function updateProgress() {
+                const total = currentProcessingIds.length;
+                const percent = Math.round((processedCount / total) * 100);
+                $('#progressBar').css('width', percent + '%');
+                $('#progressText').text(`${processedCount}/${total} processed (${successCount} success, ${errorCount} errors)`);
+            }
+            
+            // Finish processing
+            function finishProcessing() {
+                isProcessing = false;
+                $('.progress-container').hide();
+                $('.filter-buttons button').prop('disabled', false);
+                $('#verifyAll').text('Verify Selected');
+                
+                alert(`Processing complete!\nTotal: ${currentProcessingIds.length}\nSuccess: ${successCount}\nFailed: ${errorCount}`);
+            }
+            
+            // Stop processing
+            function stopProcessing() {
+                isProcessing = false;
+                $('.check-verification').prop('disabled', false).text('Check Verification');
+                finishProcessing();
+            }
+
+            // Filter buttons functionality
+            $('#filterAll').click(function() {
+                $('tbody tr').show();
+            });
+            
+            $('#filterVerified').click(function() {
+                $('tbody tr').hide();
+                $('tbody tr').has('.alert-success').show();
+            });
+            
+            $('#filterNotVerified').click(function() {
+                $('tbody tr').hide();
+                $('tbody tr').has('.alert-danger').show();
+                $('tbody tr').not(':has(.alert)').show();
+            });
+            
+            // Scroll to top/bottom buttons
+            $('#topButton').click(function() {
+                $('html, body').animate({scrollTop: 0}, 'slow');
+            });
+            
+            $('#bottomButton').click(function() {
+                $('html, body').animate({scrollTop: $(document).height()}, 'slow');
+            });
+            
+            // Copy URL buttons
+            $('.copy-url').click(function() {
+                var url = $(this).data('url');
+                var $button = $(this);
+                navigator.clipboard.writeText(url).then(function() {
+                    $button.text('Copied!');
+                    setTimeout(function() {
+                        $button.text('Copy');
+                    }, 2000);
                 });
             });
         });

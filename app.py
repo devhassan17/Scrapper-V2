@@ -302,4 +302,4 @@ if __name__ == "__main__":
     asyncio.run(fetch_urls_on_start())  # Fetch URLs on app start
     scheduler.add_job(check_for_new_urls, 'interval', weeks=1)  # Schedule automatic fetching
     scheduler.start()
-    app.run(debug=True , port=6000)
+    app.run(debug=True , port=5000) 
